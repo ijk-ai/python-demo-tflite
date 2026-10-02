@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+results/
+*.tflite
+*.npy
+*.zip
+manifest.json
