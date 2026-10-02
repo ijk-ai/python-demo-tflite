@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -145,7 +146,18 @@ class Model:
             raise ValueError("model.tflite does not match the export manifest (SHA-256).")
         import tensorflow as tf
 
-        self.interpreter = tf.lite.Interpreter(model_path=str(model_path))
+        # TensorFlow 2.21 emits this known notice even though the pinned
+        # interpreter still runs our .tflite files. Keep all other warnings.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=(
+                    r"^Warning: tf\.lite\.Interpreter is deprecated and is scheduled for deletion in"
+                    r"\s+TF 2\.20\. Please use the LiteRT interpreter from the ai_edge_litert package\."
+                ),
+                category=UserWarning,
+            )
+            self.interpreter = tf.lite.Interpreter(model_path=str(model_path))
         self.interpreter.allocate_tensors()
         self.input_index = self.interpreter.get_input_details()[0]["index"]
 

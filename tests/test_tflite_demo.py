@@ -8,6 +8,7 @@ import tempfile
 import threading
 import types
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -79,6 +80,7 @@ class DemoTests(unittest.TestCase):
         fake_tf = types.SimpleNamespace(
             lite=types.SimpleNamespace(Interpreter=lambda **kwargs: self.interpreter)
         )
+        self.fake_tf = fake_tf
         self.patch = patch.dict(sys.modules, {"tensorflow": fake_tf})
         self.patch.start()
 
@@ -121,6 +123,44 @@ class DemoTests(unittest.TestCase):
             (folder / "model.tflite").write_bytes(b"changed")
             with self.assertRaisesRegex(ValueError, "SHA-256"):
                 demo.Model(folder)
+
+    def test_only_known_tensorflow_interpreter_notice_is_suppressed(self):
+        known = (
+            "Warning: tf.lite.Interpreter is deprecated and is scheduled for deletion in\n"
+            "TF 2.20. Please use the LiteRT interpreter from the ai_edge_litert package.\n"
+            "See the migration guide for details."
+        )
+        unrelated = "An unrelated interpreter warning"
+
+        def noisy_interpreter(**kwargs):
+            warnings.warn_explicit(
+                known,
+                UserWarning,
+                filename="interpreter.py",
+                lineno=457,
+                module="tensorflow.lite.python.interpreter",
+            )
+            warnings.warn_explicit(
+                unrelated,
+                UserWarning,
+                filename="interpreter.py",
+                lineno=458,
+                module="tensorflow.lite.python.interpreter",
+            )
+            return self.interpreter
+
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            make_export(folder, "classification")
+            with (
+                patch.object(self.fake_tf.lite, "Interpreter", noisy_interpreter),
+                warnings.catch_warnings(record=True) as observed,
+            ):
+                warnings.simplefilter("always")
+                demo.Model(folder)
+                # The temporary filter must not leak into the caller's context.
+                warnings.warn_explicit(known, UserWarning, "interpreter.py", 459)
+        self.assertEqual([str(item.message) for item in observed], [unrelated, known])
 
     def test_wrong_or_broken_manifest_has_clear_error(self):
         with tempfile.TemporaryDirectory() as temp:
