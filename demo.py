@@ -152,7 +152,7 @@ class Model:
             warnings.filterwarnings(
                 "ignore",
                 message=(
-                    r"^Warning: tf\.lite\.Interpreter is deprecated and is scheduled for deletion in"
+                    r"^\s*Warning: tf\.lite\.Interpreter is deprecated and is scheduled for deletion in"
                     r"\s+TF 2\.20\. Please use the LiteRT interpreter from the ai_edge_litert package\."
                 ),
                 category=UserWarning,

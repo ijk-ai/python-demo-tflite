@@ -126,7 +126,7 @@ class DemoTests(unittest.TestCase):
 
     def test_only_known_tensorflow_interpreter_notice_is_suppressed(self):
         known = (
-            "Warning: tf.lite.Interpreter is deprecated and is scheduled for deletion in\n"
+            "    Warning: tf.lite.Interpreter is deprecated and is scheduled for deletion in\n"
             "TF 2.20. Please use the LiteRT interpreter from the ai_edge_litert package.\n"
             "See the migration guide for details."
         )
@@ -274,6 +274,59 @@ class DemoTests(unittest.TestCase):
         self.assertGreaterEqual(camera.count, 3)
         self.assertTrue(camera.released)
         self.assertFalse(prediction_timed_out)
+
+    def test_webcam_default_samples_the_fifth_frame(self):
+        analyzed = []
+
+        class Camera:
+            count = 0
+
+            def isOpened(self):
+                return True
+
+            def read(self):
+                self.count += 1
+                return True, np.full((8, 8, 3), self.count, dtype=np.uint8)
+
+            def release(self):
+                pass
+
+        class Model:
+            config = CONFIG
+            labels = ("red", "blue")
+
+            def __init__(self, path):
+                pass
+
+            def predict(self, image):
+                analyzed.append(int(np.asarray(image)[0, 0, 0]))
+                crop = demo.prepare_image(image, self.config)[1]
+                return crop, {"mode": "classification", "scores": np.array([0.8, 0.2])}
+
+        camera = Camera()
+        fake_cv2 = types.SimpleNamespace(
+            VideoCapture=lambda index: camera,
+            COLOR_BGR2RGB=1,
+            COLOR_RGB2BGR=2,
+            FONT_HERSHEY_SIMPLEX=0,
+            WND_PROP_VISIBLE=0,
+            error=RuntimeError,
+            cvtColor=lambda frame, code: frame,
+            putText=lambda *args: None,
+            imshow=lambda *args: None,
+            waitKey=lambda *args: 0,
+            getWindowProperty=lambda *args: 0 if camera.count >= 6 else 1,
+            destroyAllWindows=lambda: None,
+        )
+        with patch.dict(sys.modules, {"demo": demo, "cv2": fake_cv2}):
+            webcam_spec = importlib.util.spec_from_file_location(
+                "ijk_tflite_webcam_fifth", ROOT / "webcam.py"
+            )
+            webcam = importlib.util.module_from_spec(webcam_spec)
+            webcam_spec.loader.exec_module(webcam)
+        with patch.object(webcam, "Model", Model):
+            webcam.main(["unused-export"])
+        self.assertEqual(analyzed, [5])
 
 
 if __name__ == "__main__":
